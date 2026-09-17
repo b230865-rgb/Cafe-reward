@@ -56,6 +56,12 @@ function App() {
   async function runAction(type: 'purchase' | 'redeem') {
     if (!selected) return
     setError(''); setNotice('')
+    const rawValue = type === 'purchase' ? purchaseAmount : redeemPoints
+    const numericValue = Number(rawValue)
+    if (!Number.isFinite(numericValue) || numericValue <= 0 || (type === 'redeem' && !Number.isInteger(numericValue))) {
+      setError(type === 'purchase' ? 'Enter a purchase amount greater than zero.' : 'Enter whole points greater than zero.')
+      return
+    }
     try {
       const data = await api(`/api/members/${selected.id}/${type}`, { method: 'POST', body: JSON.stringify(type === 'purchase' ? { amount: purchaseAmount } : { points: redeemPoints, rewardName: 'Free drink' }) }, token)
       setSelected(data.member); setNotice(type === 'purchase' ? `Added ${data.pointsAdded} points.` : `Redeemed ${data.pointsUsed} points.`)

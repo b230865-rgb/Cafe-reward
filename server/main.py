@@ -9,6 +9,7 @@ from typing import Annotated
 import bcrypt
 import jwt
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -197,6 +198,17 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 @app.exception_handler(HTTPException)
 async def http_error(_request: Request, exception: HTTPException):
     return JSONResponse(status_code=exception.status_code, content={"error": str(exception.detail)})
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error(request: Request, _exception: RequestValidationError):
+    if request.url.path.endswith("/purchase"):
+        message = "Enter a purchase amount greater than zero."
+    elif request.url.path.endswith("/redeem"):
+        message = "Enter whole points greater than zero."
+    else:
+        message = "Please check the submitted values."
+    return JSONResponse(status_code=422, content={"error": message})
 
 
 @app.post("/api/auth/register", status_code=201)
