@@ -1,10 +1,10 @@
 services:
   - type: web
     name: cafe-pont
-    runtime: docker
+    runtime: python
     plan: starter
-    dockerfilePath: ./Dockerfile
-    dockerContext: .
+    buildCommand: pip install -r requirements.txt && npm install && npm run build
+    startCommand: python server/main.py
     healthCheckPath: /api/health
     envVars:
       - key: JWT_SECRET

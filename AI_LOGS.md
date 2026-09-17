@@ -123,7 +123,7 @@ Not Found
 Assistant:
 Diagnosed that Render was starting the API without reliably serving the built Vite frontend. Added a multi-stage Dockerfile: Node builds the React frontend and Python runs FastAPI. Added .dockerignore, changed render.yaml to use Docker, moved the persistent disk to /var/data, and set DATABASE_PATH so the disk does not hide server/main.py.
 
-Updated README.md with the new deployment steps and pushed commit 8f6d0f7. Render must be redeployed using Manual Deploy > Deploy latest commit.
+Updated README.md with the Docker deployment steps and pushed commit 8f6d0f7. This approach was later removed at the user's request in favor of Render's native Python runtime.
 
 ## 8. Local browser troubleshooting
 
@@ -159,7 +159,7 @@ User:
 Please check the company submission documents and make README.md, REASONING.md, and AI_LOGS.md properly describe what was done in the project.
 
 Assistant:
-Reviewed all three evaluation files for consistency with the shipped FastAPI/Docker implementation. Updated the README with the complete data model, setup instructions, rewards rules, endpoint behavior, deployment details, and validation notes. Updated REASONING.md with the final architecture, twist decisions, tests, and deployment tradeoffs. Updated this log to reflect the complete project timeline.
+Reviewed all three evaluation files for consistency with the shipped FastAPI implementation. Updated the README with the complete data model, setup instructions, rewards rules, endpoint behavior, deployment details, and validation notes. Updated REASONING.md with the final architecture, twist decisions, tests, and deployment tradeoffs. Updated this log to reflect the complete project timeline.
 
 The repository contains:
 
@@ -172,9 +172,17 @@ The repository contains:
 - 90-day point expiration through POST /clock
 - Tier-change Notification Service outbox through /outbox
 - README.md, REASONING.md, and this AI_LOGS.md
-- Docker-based Render deployment configuration
+- Native Python Render deployment configuration
 
-Latest deployment fix commit: 8f6d0f7.
+The Docker deployment experiment was removed; Render now uses the native Python runtime from `render.yaml`.
+
+## 11. Docker removal
+
+User:
+Also remove the Docker implementation.
+
+Assistant:
+Removed Dockerfile and .dockerignore, changed render.yaml back to the native Python runtime, restored the Python build and start commands, and updated the documentation to describe the current deployment accurately.
 
 The documentation updates in this section are part of the latest commit on `main`.
 
