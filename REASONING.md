@@ -1,0 +1,30 @@
+# Reasoning
+
+## Product shape
+
+The counter's most important promise is that a member's balance is exact. I therefore treated rewards as a domain and persistence problem before a UI problem. The UI is intentionally split into a searchable member list and a detail panel so staff can repeatedly perform the same counter workflow without losing context.
+
+## Accounting decisions
+
+Members have a stored integer `points` balance. Purchases store cents and calculate whole points from an explicit tier multiplier. The current rules are Regular at 1x below 500 points, Silver at 1.5x from 500 points, and Gold at 2x from 2,000 points. Redemption validates a positive integer and the current balance before mutation.
+
+The purchase and redemption updates are wrapped in SQLite transactions. Each operation also inserts an immutable transaction row, giving the UI an activity history and giving debugging a way to reconcile the balance. Rejected redemptions return before any write, so insufficient points cannot create a negative balance.
+
+## Delivery sequence
+
+1. Scaffolded a React/Vite frontend and added Express, SQLite, bcrypt, JWT, CORS, and concurrent development dependencies.
+2. Created the SQLite schema and seed members in `server/index.js`.
+3. Added registration/login, authenticated member queries, search, sorting, pagination, purchase, redemption, and health endpoints.
+4. Replaced the starter screen with the landing/auth flow and the counter workflow.
+5. Added responsive visual design for desktop counter use and smaller screens.
+6. Replaced the starter README with setup, debugging, schema, product, and complete endpoint documentation.
+
+## Testing and fixes
+
+The first production build exposed a TypeScript error caused by `verbatimModuleSyntax`; `FormEvent` was changed to a type-only import. The next build exposed accidental `+` patch markers in two responsive CSS selectors; those were removed. The final `npm run build` completed successfully and emitted the Vite production bundle.
+
+The next validation step for a deployed environment is a smoke test of registration, login, member lookup, purchase, and redemption against the running API. The API stores its local SQLite database in `server/cafe-pont.db`, which should not be committed for a hosted deployment.
+
+## Tradeoffs and risks
+
+This submission uses a local SQLite file for simple real persistence and a clear transactional boundary. A production multi-location deployment would move this schema to PostgreSQL, replace the local JWT secret with environment configuration, add server-side rate limiting, and make earning/redemption policies configurable per cafe. Phone numbers are currently normalized only for the search query presentation; a future migration should store a canonical digits-only search column and enforce country-aware uniqueness.
