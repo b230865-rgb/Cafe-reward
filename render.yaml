@@ -1,17 +1,19 @@
 services:
   - type: web
     name: cafe-pont
-    runtime: python
+    runtime: docker
     plan: starter
-    buildCommand: pip install -r requirements.txt && npm install && npm run build
-    startCommand: npm start
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     healthCheckPath: /api/health
     envVars:
       - key: JWT_SECRET
         generateValue: true
       - key: NODE_VERSION
         value: 20
+      - key: DATABASE_PATH
+        value: /var/data/cafe-pont.db
     disk:
       name: cafe-pont-data
-      mountPath: /opt/render/project/src/server
+      mountPath: /var/data
       sizeGB: 1

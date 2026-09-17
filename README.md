@@ -50,7 +50,7 @@ npm run preview
 
 ## Deploy
 
-The repository includes `render.yaml` for a single Render web service. In Render, choose **New + > Blueprint**, connect `b230865-rgb/Cafe-reward`, and apply the blueprint. It installs FastAPI, builds the Vite UI, serves it from Python, runs the API health check, generates `JWT_SECRET`, and mounts a 1 GB persistent disk at `server/` for SQLite. A Render Starter plan or higher is required for the persistent disk.
+The repository includes `render.yaml` and a multi-stage `Dockerfile` for a single Render web service. In Render, choose **New + > Blueprint**, connect `b230865-rgb/Cafe-reward`, and apply the blueprint. Docker builds the Vite UI in a Node stage, runs FastAPI in a Python stage, runs the API health check, generates `JWT_SECRET`, and mounts a 1 GB persistent disk at `/var/data` for SQLite. A Render Starter plan or higher is required for the persistent disk. After pushing changes, use **Manual Deploy > Deploy latest commit** in Render.
 
 Useful checks:
 
