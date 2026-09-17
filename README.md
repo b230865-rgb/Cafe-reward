@@ -13,7 +13,7 @@ Cafe Pont is a full-stack rewards counter for independent cafes. Staff can regis
 ## Stack and schema
 
 - React 19 + Vite frontend
-- Express REST API
+- FastAPI REST API
 - SQLite via `better-sqlite3`
 - JWT authentication and bcrypt password hashing
 
@@ -27,10 +27,11 @@ The member balance is read from the `members.points` authoritative state and eve
 
 ## Setup and run
 
-Requires Node.js 20+.
+Requires Node.js 20+ and Python 3.10+.
 
 ```bash
 npm install
+pip install -r requirements.txt
 npm run dev
 ```
 
@@ -46,7 +47,7 @@ npm run preview
 
 ## Deploy
 
-The repository includes `render.yaml` for a single Render web service. In Render, choose **New + > Blueprint**, connect `b230865-rgb/Cafe-reward`, and apply the blueprint. It builds the Vite UI, serves it from Express, runs the API health check, generates `JWT_SECRET`, and mounts a 1 GB persistent disk at `server/` for SQLite. A Render Starter plan or higher is required for the persistent disk.
+The repository includes `render.yaml` for a single Render web service. In Render, choose **New + > Blueprint**, connect `b230865-rgb/Cafe-reward`, and apply the blueprint. It installs FastAPI, builds the Vite UI, serves it from Python, runs the API health check, generates `JWT_SECRET`, and mounts a 1 GB persistent disk at `server/` for SQLite. A Render Starter plan or higher is required for the persistent disk.
 
 Useful checks:
 

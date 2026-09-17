@@ -12,8 +12,8 @@ The purchase and redemption updates are wrapped in SQLite transactions. Each ope
 
 ## Delivery sequence
 
-1. Scaffolded a React/Vite frontend and added Express, SQLite, bcrypt, JWT, CORS, and concurrent development dependencies.
-2. Created the SQLite schema and seed members in `server/index.js`.
+1. Scaffolded a React/Vite frontend and added FastAPI, SQLite, bcrypt, JWT, CORS, and concurrent development dependencies.
+2. Created the SQLite schema and seed members in `server/main.py`.
 3. Added registration/login, authenticated member queries, search, sorting, pagination, purchase, redemption, and health endpoints.
 4. Replaced the starter screen with the landing/auth flow and the counter workflow.
 5. Added responsive visual design for desktop counter use and smaller screens.
@@ -28,3 +28,7 @@ The next validation step for a deployed environment is a smoke test of registrat
 ## Tradeoffs and risks
 
 This submission uses a local SQLite file for simple real persistence and a clear transactional boundary. A production multi-location deployment would move this schema to PostgreSQL, replace the local JWT secret with environment configuration, add server-side rate limiting, and make earning/redemption policies configurable per cafe. Phone numbers are currently normalized only for the search query presentation; a future migration should store a canonical digits-only search column and enforce country-aware uniqueness.
+
+## Backend migration
+
+The backend was migrated from Express to Python FastAPI without changing the frontend API contract. The FastAPI service keeps the same REST paths, SQLite tables, JWT payload, error shape, and atomic rewards operations. Python smoke testing verified health, registration, member search, purchase earning, and redemption against the existing database.
