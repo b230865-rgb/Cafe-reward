@@ -153,7 +153,13 @@ give link
 Assistant:
 Provided the GitHub repository link and the local application link. Explained that a public Render URL is only created after deploying the Render service.
 
-## 10. Current status
+## 10. Documentation review and current status
+
+User:
+Please check the company submission documents and make README.md, REASONING.md, and AI_LOGS.md properly describe what was done in the project.
+
+Assistant:
+Reviewed all three evaluation files for consistency with the shipped FastAPI/Docker implementation. Updated the README with the complete data model, setup instructions, rewards rules, endpoint behavior, deployment details, and validation notes. Updated REASONING.md with the final architecture, twist decisions, tests, and deployment tradeoffs. Updated this log to reflect the complete project timeline.
 
 The repository contains:
 
@@ -169,5 +175,7 @@ The repository contains:
 - Docker-based Render deployment configuration
 
 Latest deployment fix commit: 8f6d0f7.
+
+The documentation updates in this section are part of the latest commit on `main`.
 
 Repository: https://github.com/b230865-rgb/Cafe-reward
