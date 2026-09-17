@@ -51,23 +51,27 @@ def setup_database() -> None:
     with connect() as db:
         db.executescript("""
         CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
-        CREATE TABLE IF NOT EXISTS members (id INTEGER PRIMARY KEY, name TEXT NOT NULL, phone TEXT UNIQUE NOT NULL, points INTEGER NOT NULL DEFAULT 0, lifetime_spend_cents INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+        CREATE TABLE IF NOT EXISTS members (id INTEGER PRIMARY KEY, name TEXT NOT NULL, phone TEXT UNIQUE NOT NULL, points INTEGER NOT NULL DEFAULT 0, lifetime_spend_cents INTEGER NOT NULL DEFAULT 0, lifetime_points_earned INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY, member_id INTEGER NOT NULL REFERENCES members(id), type TEXT NOT NULL CHECK(type IN ('purchase', 'redemption')), amount_cents INTEGER, points_delta INTEGER NOT NULL, reward_name TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE IF NOT EXISTS point_lots (id INTEGER PRIMARY KEY, member_id INTEGER NOT NULL REFERENCES members(id), transaction_id INTEGER REFERENCES transactions(id), granted_points INTEGER NOT NULL, remaining_points INTEGER NOT NULL, earned_at TEXT NOT NULL, expired_at TEXT);
         CREATE TABLE IF NOT EXISTS notifications_outbox (id INTEGER PRIMARY KEY, member_id INTEGER NOT NULL REFERENCES members(id), event_type TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL, delivered_at TEXT);
         """)
+        member_columns = {row["name"] for row in db.execute("PRAGMA table_info(members)").fetchall()}
+        if "lifetime_points_earned" not in member_columns:
+            db.execute("ALTER TABLE members ADD COLUMN lifetime_points_earned INTEGER NOT NULL DEFAULT 0")
         if db.execute("SELECT COUNT(*) FROM members").fetchone()[0] == 0:
             db.executemany(
-                "INSERT INTO members (name, phone, points, lifetime_spend_cents) VALUES (?, ?, ?, ?)",
+                "INSERT INTO members (name, phone, points, lifetime_spend_cents, lifetime_points_earned) VALUES (?, ?, ?, ?, ?)",
                 [
-                    ("Maya Chen", "415-555-0138", 2380, 238000),
-                    ("Theo Grant", "415-555-0172", 1240, 124000),
-                    ("Rina Patel", "415-555-0191", 760, 76000),
-                    ("Jon Bell", "415-555-0114", 410, 41000),
-                    ("Ava Williams", "415-555-0155", 1840, 184000),
-                    ("Nico Santos", "415-555-0184", 320, 32000),
+                    ("Maya Chen", "415-555-0138", 2380, 238000, 2380),
+                    ("Theo Grant", "415-555-0172", 1240, 124000, 1240),
+                    ("Rina Patel", "415-555-0191", 760, 76000, 760),
+                    ("Jon Bell", "415-555-0114", 410, 41000, 410),
+                    ("Ava Williams", "415-555-0155", 1840, 184000, 1840),
+                    ("Nico Santos", "415-555-0184", 320, 32000, 320),
                 ],
             )
+        db.execute("UPDATE members SET lifetime_points_earned = points WHERE lifetime_points_earned = 0 AND points > 0")
         # Backfill pre-existing balances as one lot so they participate in expiration.
         db.execute("""
             INSERT INTO point_lots (member_id, granted_points, remaining_points, earned_at)
@@ -79,11 +83,11 @@ def setup_database() -> None:
         """)
 
 
-PLATINUM_LIFETIME_CENTS = 500_000
+PLATINUM_LIFETIME_POINTS = 5_000
 
 
-def tier_for(points: int, lifetime_spend_cents: int = 0) -> dict:
-    if lifetime_spend_cents >= PLATINUM_LIFETIME_CENTS:
+def tier_for(points: int, lifetime_points_earned: int = 0) -> dict:
+    if lifetime_points_earned >= PLATINUM_LIFETIME_POINTS:
         return {"name": "Platinum", "multiplier": 0.3, "next": None}
     if points >= 2000:
         return {"name": "Gold", "multiplier": 2, "next": None}
@@ -96,7 +100,7 @@ def public_member(member: sqlite3.Row | None) -> dict | None:
     if member is None:
         return None
     result = dict(member)
-    result["tier"] = tier_for(result["points"], result["lifetime_spend_cents"])
+    result["tier"] = tier_for(result["points"], result["lifetime_points_earned"])
     result["balance"] = result["points"] / 100
     return result
 
@@ -256,10 +260,10 @@ def purchase(member_id: int, purchase_data: Purchase, _user: Annotated[dict, Dep
     cents = round(purchase_data.amount * 100)
     with connect() as db:
         member = member_or_404(db, member_id)
-        before_tier = tier_for(member["points"], member["lifetime_spend_cents"])
+        before_tier = tier_for(member["points"], member["lifetime_points_earned"])
         points = points_for_purchase(cents, before_tier)
         created_at = timestamp(utc_now())
-        db.execute("UPDATE members SET points = points + ?, lifetime_spend_cents = lifetime_spend_cents + ? WHERE id = ?", (points, cents, member_id))
+        db.execute("UPDATE members SET points = points + ?, lifetime_spend_cents = lifetime_spend_cents + ?, lifetime_points_earned = lifetime_points_earned + ? WHERE id = ?", (points, cents, points, member_id))
         transaction = db.execute(
             "INSERT INTO transactions (member_id, type, amount_cents, points_delta, created_at) VALUES (?, 'purchase', ?, ?, ?)",
             (member_id, cents, points, created_at),
@@ -269,7 +273,7 @@ def purchase(member_id: int, purchase_data: Purchase, _user: Annotated[dict, Dep
             (member_id, transaction.lastrowid, points, points, created_at),
         )
         updated = member_or_404(db, member_id)
-        notify_tier_change(db, updated, before_tier, tier_for(updated["points"], updated["lifetime_spend_cents"]), created_at)
+        notify_tier_change(db, updated, before_tier, tier_for(updated["points"], updated["lifetime_points_earned"]), created_at)
     return {"member": public_member(updated), "pointsAdded": points}
 
 

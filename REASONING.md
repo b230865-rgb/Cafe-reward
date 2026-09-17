@@ -6,13 +6,13 @@ The counter's most important promise is that a member's balance is exact. I ther
 
 ## Accounting decisions
 
-Members have a stored integer `points` balance. Purchases store cents and calculate whole points from an explicit tier multiplier. The rules are Regular at 1x below 500 points, Silver at 1.5x from 500 points, Gold at 2x from 2,000 points, and Platinum at 0.3x after 5,000 currency units of lifetime spend. Redemption validates a positive integer and the current balance before mutation.
+Members have a stored integer `points` balance and a separate `lifetime_points_earned` value. Purchases store cents and calculate whole points from an explicit tier multiplier. The rules are Regular at 1x below 500 points, Silver at 1.5x from 500 points, Gold at 2x from 2,000 points, and Platinum at 0.3x after 5,000 lifetime earned points. Redemption validates a positive integer and the current balance before mutation.
 
 The purchase and redemption updates are wrapped in SQLite transactions. Each operation also inserts an immutable transaction row, giving the UI an activity history and giving debugging a way to reconcile the balance. Rejected redemptions return before any write, so insufficient points cannot create a negative balance.
 
 ## Twist implementation
 
-Platinum is evaluated before the existing point-based tiers using lifetime spend in cents. The original seeded members remain unchanged because none reaches 500,000 cents. The purchase multiplier is calculated with integer arithmetic, including Platinum's exact 0.3 points per currency unit rate.
+Platinum is evaluated before the existing point-based tiers using lifetime earned points. The original seeded members remain unchanged because none reaches 5,000 lifetime points. A migration adds `lifetime_points_earned` to existing databases and initializes legacy members from their current points without changing their current balances. The purchase multiplier is calculated with integer arithmetic, including Platinum's exact 0.3 points per currency unit rate. Redemption and expiration never reduce lifetime earned points.
 
 Points are represented by `point_lots`, so a clock run can expire only the unused portion of grants older than 90 days. Redemptions consume lots oldest-first, while `POST /clock` writes expiration ledger entries and is idempotent when called repeatedly for the same time.
 

@@ -17,7 +17,7 @@ Cafe Pont is a full-stack rewards counter for independent cafes and small café 
 - **Target audience:** cafe counter staff and small multi-shift cafe teams.
 - **Landing page:** the first screen explains the product, target audience, value, key features, and three next features.
 - **Current earning rules:** Regular earns 1 point per whole dollar, Silver starts at 500 points and earns 1.5x, Gold starts at 2,000 points and earns 2x. Points are floored to whole points.
-- **Platinum:** lifetime spend of at least 5,000 currency units qualifies the member; Platinum earns 0.3 points per currency unit. Lifetime spend is stored in cents, so the threshold is 500,000 cents.
+- **Platinum:** lifetime earned points of at least 5,000 qualify the member; Platinum earns 0.3 points per currency unit. Lifetime earned points never decrease when points are redeemed or expired.
 - **Redemption:** staff can redeem any positive whole-point amount up to the member's current balance. The API rejects insufficient balances atomically.
 - **Expiration:** unused points expire after 90 days. Point grants are tracked as lots, and `POST /clock` runs the deterministic expiration job.
 - **Notifications:** entering a new tier writes a `tier.changed` event to the notification outbox exposed at `/outbox`.
@@ -33,7 +33,7 @@ Cafe Pont is a full-stack rewards counter for independent cafes and small café 
 SQLite creates `server/cafe-pont.db` on first local API start with:
 
 - `users`: staff login credentials and creation date
-- `members`: member identity, phone, points, and lifetime spend
+- `members`: member identity, phone, current points, lifetime spend, and lifetime points earned
 - `transactions`: immutable purchase/redemption ledger entries with point deltas and timestamps
 - `point_lots`: each points grant and its remaining unexpired amount
 - `notifications_outbox`: tier-change events waiting for a notification service
@@ -90,18 +90,18 @@ Authenticated endpoints use `Authorization: Bearer <token>`. Registration and lo
 | `POST` | `/clock` or `/api/clock` | Expire unused point lots; body `{ "now": "2030-01-01T00:00:00Z" }`, `{ "advanceDays": 91 }`, or `{}` |
 | `GET` / `POST` | `/outbox` or `/api/outbox` | Read tier-change notification events as JSON |
 
-Supported member sorts are `points`, `name`, and `lifetime_spend_cents`. Search matches member name or phone number.
+Supported member sorts are `points`, `name`, and `lifetime_spend_cents`. Search matches member name or phone number. The member response also includes `lifetime_points_earned` for tier auditing.
 
 ## Rewards rules
 
 | Tier | Qualification | Purchase earning |
 | --- | --- | --- |
-| Regular | Below 500 points and below Platinum lifetime spend | 1 point per currency unit |
+| Regular | Below 500 points and below 5,000 lifetime earned points | 1 point per currency unit |
 | Silver | At least 500 points | 1.5 points per currency unit |
 | Gold | At least 2,000 points | 2 points per currency unit |
-| Platinum | Lifetime spend of at least 5,000 currency units | 0.3 points per currency unit |
+| Platinum | At least 5,000 lifetime earned points | 0.3 points per currency unit |
 
-Points are stored as whole integers. Currency is stored as cents. Platinum is checked before the existing point tiers, so members who do not meet its lifetime-spend threshold keep their previous tier and balance behavior.
+Points are stored as whole integers. Currency is stored as cents. Platinum is checked before the existing point tiers. Lifetime earned points increase only when a purchase awards points; redemption and expiration affect spendable balance only, so a qualifying member remains Platinum.
 
 ## Debugging and validation
 

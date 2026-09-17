@@ -99,7 +99,7 @@ Twists for this problem:
 - Level 3 — T1 integrate: When a member crosses into a new tier, notify them via the Notification Service. Graded via /outbox.
 
 Assistant:
-Implemented Platinum using lifetime spend in cents, with a 500,000-cent threshold and an exact 0.3 points-per-unit calculation. Existing seeded members remain unchanged because they do not meet the threshold.
+Initially implemented Platinum using lifetime spend in cents, then aligned the business rule with the clarified project statement: Platinum now uses lifetime earned points, with a 5,000-point threshold and an exact 0.3 points-per-unit calculation. Existing seeded members remain unchanged because they do not meet the threshold.
 
 Added point_lots so unused points can expire accurately after 90 days. Redemptions consume point lots oldest-first. Added POST /clock and POST /api/clock, supporting an explicit now timestamp or advanceDays/advance_days. Expiration creates ledger entries and is idempotent.
 
@@ -175,6 +175,14 @@ The repository contains:
 - Native Python Render deployment configuration
 
 The Docker deployment experiment was removed; Render now uses the native Python runtime from `render.yaml`.
+
+## 12. Clarified Platinum rule
+
+User:
+The project statement is the authoritative requirement. Change the project according to it.
+
+Assistant:
+Updated Platinum qualification to use `lifetime_points_earned >= 5000` instead of lifetime spend. Purchases increase both current points and lifetime earned points. Redemption and 90-day expiration reduce only the current balance, so a member remains Platinum after qualifying. Added a database migration for existing members and updated the README and reasoning documentation.
 
 ## 11. Docker removal
 
