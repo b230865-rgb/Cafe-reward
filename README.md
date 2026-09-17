@@ -1,20 +1,23 @@
 # Cafe Pont
 
-Cafe Pont is a full-stack rewards counter for independent cafes. Staff can register, log in, search members by name or phone, record purchases, redeem rewards, and see the authoritative live points balance. Silver and Gold members earn faster without making the counter staff calculate tiers manually.
+Cafe Pont is a full-stack rewards counter for independent cafes. Staff can register, log in, search members by name or phone, record purchases, redeem rewards, and see the authoritative live points balance. Silver, Gold, and Platinum members earn according to their tier without making counter staff calculate rewards manually.
 
 ## Product
 
 - **Target audience:** cafe counter staff and small multi-shift cafe teams.
 - **Landing page:** the first screen explains the product, target audience, value, key features, and three next features.
 - **Current earning rules:** Regular earns 1 point per whole dollar, Silver starts at 500 points and earns 1.5x, Gold starts at 2,000 points and earns 2x. Points are floored to whole points.
+- **Platinum:** lifetime spend of at least 5,000 currency units qualifies the member; Platinum earns 0.3 points per currency unit. Lifetime spend is stored in cents, so the threshold is 500,000 cents.
 - **Redemption:** staff can redeem any positive whole-point amount up to the member's current balance. The API rejects insufficient balances atomically.
+- **Expiration:** unused points expire after 90 days. Point grants are tracked as lots, and `POST /clock` runs the deterministic expiration job.
+- **Notifications:** entering a new tier writes a `tier.changed` event to the notification outbox exposed at `/outbox`.
 - **Next features:** member insights, a configurable rewards catalog, and multi-location support.
 
 ## Stack and schema
 
 - React 19 + Vite frontend
 - FastAPI REST API
-- SQLite via `better-sqlite3`
+- SQLite via Python's standard `sqlite3` module
 - JWT authentication and bcrypt password hashing
 
 SQLite creates `server/cafe-pont.db` on first API start with:
@@ -71,6 +74,8 @@ Authenticated endpoints use `Authorization: Bearer <token>`.
 | `GET` | `/api/members/:id` | Get member profile and recent ledger entries |
 | `POST` | `/api/members/:id/purchase` | Record purchase; body `{ amount }` |
 | `POST` | `/api/members/:id/redeem` | Redeem points; body `{ points, rewardName }` |
+| `POST` | `/clock` or `/api/clock` | Expire unused point lots; body `{ now }`, `{ advanceDays }`, or empty |
+| `GET` / `POST` | `/outbox` or `/api/outbox` | Read tier-change notification events |
 
 Supported member sorts are `points`, `name`, and `lifetime_spend_cents`. Search matches member name or phone number.
 

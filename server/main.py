@@ -1,6 +1,8 @@
+import json
 import os
 import sqlite3
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated
 
@@ -13,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-DB_PATH = Path(__file__).resolve().parent / "cafe-pont.db"
+DB_PATH = Path(os.getenv("DATABASE_PATH", Path(__file__).resolve().parent / "cafe-pont.db"))
 JWT_SECRET = os.getenv("JWT_SECRET", "cafe-pont-local-secret")
 PORT = int(os.getenv("PORT", "3001"))
 
@@ -32,6 +34,12 @@ class Redemption(BaseModel):
     rewardName: str = "Free drink"
 
 
+class ClockRequest(BaseModel):
+    now: datetime | None = None
+    advanceDays: int | None = None
+    advance_days: int | None = None
+
+
 def connect() -> sqlite3.Connection:
     connection = sqlite3.connect(DB_PATH, timeout=10)
     connection.row_factory = sqlite3.Row
@@ -45,6 +53,8 @@ def setup_database() -> None:
         CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE IF NOT EXISTS members (id INTEGER PRIMARY KEY, name TEXT NOT NULL, phone TEXT UNIQUE NOT NULL, points INTEGER NOT NULL DEFAULT 0, lifetime_spend_cents INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY, member_id INTEGER NOT NULL REFERENCES members(id), type TEXT NOT NULL CHECK(type IN ('purchase', 'redemption')), amount_cents INTEGER, points_delta INTEGER NOT NULL, reward_name TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+        CREATE TABLE IF NOT EXISTS point_lots (id INTEGER PRIMARY KEY, member_id INTEGER NOT NULL REFERENCES members(id), transaction_id INTEGER REFERENCES transactions(id), granted_points INTEGER NOT NULL, remaining_points INTEGER NOT NULL, earned_at TEXT NOT NULL, expired_at TEXT);
+        CREATE TABLE IF NOT EXISTS notifications_outbox (id INTEGER PRIMARY KEY, member_id INTEGER NOT NULL REFERENCES members(id), event_type TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL, delivered_at TEXT);
         """)
         if db.execute("SELECT COUNT(*) FROM members").fetchone()[0] == 0:
             db.executemany(
@@ -58,9 +68,23 @@ def setup_database() -> None:
                     ("Nico Santos", "415-555-0184", 320, 32000),
                 ],
             )
+        # Backfill pre-existing balances as one lot so they participate in expiration.
+        db.execute("""
+            INSERT INTO point_lots (member_id, granted_points, remaining_points, earned_at)
+            SELECT m.id, m.points, m.points, m.created_at
+            FROM members m
+            WHERE m.points > 0 AND NOT EXISTS (
+                SELECT 1 FROM point_lots l WHERE l.member_id = m.id
+            )
+        """)
 
 
-def tier_for(points: int) -> dict:
+PLATINUM_LIFETIME_CENTS = 500_000
+
+
+def tier_for(points: int, lifetime_spend_cents: int = 0) -> dict:
+    if lifetime_spend_cents >= PLATINUM_LIFETIME_CENTS:
+        return {"name": "Platinum", "multiplier": 0.3, "next": None}
     if points >= 2000:
         return {"name": "Gold", "multiplier": 2, "next": None}
     if points >= 500:
@@ -72,7 +96,7 @@ def public_member(member: sqlite3.Row | None) -> dict | None:
     if member is None:
         return None
     result = dict(member)
-    result["tier"] = tier_for(result["points"])
+    result["tier"] = tier_for(result["points"], result["lifetime_spend_cents"])
     result["balance"] = result["points"] / 100
     return result
 
@@ -96,6 +120,64 @@ def current_user(authorization: Annotated[str | None, Header()] = None) -> dict:
         return jwt.decode(authorization.removeprefix("Bearer "), JWT_SECRET, algorithms=["HS256"])
     except jwt.InvalidTokenError as error:
         raise HTTPException(401, "Please log in to continue.") from error
+
+
+def points_for_purchase(cents: int, tier: dict) -> int:
+    if tier["name"] == "Platinum":
+        return cents * 3 // 1000
+    if tier["name"] == "Gold":
+        return cents * 2 // 100
+    if tier["name"] == "Silver":
+        return cents * 3 // 200
+    return cents // 100
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def timestamp(value: datetime) -> str:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
+
+
+def notify_tier_change(db: sqlite3.Connection, member: sqlite3.Row, before: dict, after: dict, created_at: str) -> None:
+    if before["name"] == after["name"]:
+        return
+    payload = {
+        "memberId": member["id"],
+        "memberName": member["name"],
+        "fromTier": before["name"],
+        "toTier": after["name"],
+    }
+    db.execute(
+        "INSERT INTO notifications_outbox (member_id, event_type, payload, created_at) VALUES (?, 'tier.changed', ?, ?)",
+        (member["id"], json.dumps(payload), created_at),
+    )
+
+
+def expire_points(db: sqlite3.Connection, as_of: datetime) -> int:
+    cutoff = as_of - timedelta(days=90)
+    cutoff_text = timestamp(cutoff)
+    expired_total = 0
+    stale_lots = db.execute(
+        "SELECT * FROM point_lots WHERE remaining_points > 0 AND earned_at <= ? ORDER BY earned_at, id",
+        (cutoff_text,),
+    ).fetchall()
+    for lot in stale_lots:
+        expired = lot["remaining_points"]
+        if expired <= 0:
+            continue
+        created_at = timestamp(as_of)
+        db.execute(
+            "INSERT INTO transactions (member_id, type, points_delta, reward_name, created_at) VALUES (?, 'redemption', ?, 'Expired points (90 days)', ?)",
+            (lot["member_id"], -expired, created_at),
+        )
+        db.execute("UPDATE point_lots SET remaining_points = 0, expired_at = ? WHERE id = ?", (created_at, lot["id"]))
+        db.execute("UPDATE members SET points = MAX(points - ?, 0) WHERE id = ?", (expired, lot["member_id"]))
+        expired_total += expired
+    return expired_total
 
 
 @asynccontextmanager
@@ -174,10 +256,20 @@ def purchase(member_id: int, purchase_data: Purchase, _user: Annotated[dict, Dep
     cents = round(purchase_data.amount * 100)
     with connect() as db:
         member = member_or_404(db, member_id)
-        points = int(cents / 100 * tier_for(member["points"])["multiplier"])
+        before_tier = tier_for(member["points"], member["lifetime_spend_cents"])
+        points = points_for_purchase(cents, before_tier)
+        created_at = timestamp(utc_now())
         db.execute("UPDATE members SET points = points + ?, lifetime_spend_cents = lifetime_spend_cents + ? WHERE id = ?", (points, cents, member_id))
-        db.execute("INSERT INTO transactions (member_id, type, amount_cents, points_delta) VALUES (?, 'purchase', ?, ?)", (member_id, cents, points))
+        transaction = db.execute(
+            "INSERT INTO transactions (member_id, type, amount_cents, points_delta, created_at) VALUES (?, 'purchase', ?, ?, ?)",
+            (member_id, cents, points, created_at),
+        )
+        db.execute(
+            "INSERT INTO point_lots (member_id, transaction_id, granted_points, remaining_points, earned_at) VALUES (?, ?, ?, ?, ?)",
+            (member_id, transaction.lastrowid, points, points, created_at),
+        )
         updated = member_or_404(db, member_id)
+        notify_tier_change(db, updated, before_tier, tier_for(updated["points"], updated["lifetime_spend_cents"]), created_at)
     return {"member": public_member(updated), "pointsAdded": points}
 
 
@@ -187,10 +279,50 @@ def redeem(member_id: int, redemption: Redemption, _user: Annotated[dict, Depend
         member = member_or_404(db, member_id)
         if redemption.points > member["points"]:
             raise HTTPException(400, "Not enough points for this redemption.")
+        created_at = timestamp(utc_now())
         db.execute("UPDATE members SET points = points - ? WHERE id = ?", (redemption.points, member_id))
-        db.execute("INSERT INTO transactions (member_id, type, points_delta, reward_name) VALUES (?, 'redemption', ?, ?)", (member_id, -redemption.points, redemption.rewardName.strip() or "Free drink"))
+        db.execute(
+            "INSERT INTO transactions (member_id, type, points_delta, reward_name, created_at) VALUES (?, 'redemption', ?, ?, ?)",
+            (member_id, -redemption.points, redemption.rewardName.strip() or "Free drink", created_at),
+        )
+        remaining = redemption.points
+        lots = db.execute(
+            "SELECT id, remaining_points FROM point_lots WHERE member_id = ? AND remaining_points > 0 ORDER BY earned_at, id",
+            (member_id,),
+        ).fetchall()
+        for lot in lots:
+            used = min(remaining, lot["remaining_points"])
+            db.execute("UPDATE point_lots SET remaining_points = remaining_points - ? WHERE id = ?", (used, lot["id"]))
+            remaining -= used
+            if remaining == 0:
+                break
         updated = member_or_404(db, member_id)
     return {"member": public_member(updated), "pointsUsed": redemption.points}
+
+
+@app.post("/clock")
+@app.post("/api/clock")
+def clock(clock_request: ClockRequest = ClockRequest()):
+    advance_days = clock_request.advanceDays if clock_request.advanceDays is not None else clock_request.advance_days
+    as_of = clock_request.now or utc_now()
+    if advance_days is not None:
+        as_of = as_of + timedelta(days=advance_days)
+    if as_of.tzinfo is None:
+        as_of = as_of.replace(tzinfo=timezone.utc)
+    as_of = as_of.astimezone(timezone.utc).replace(tzinfo=None)
+    with connect() as db:
+        expired_points = expire_points(db, as_of)
+    return {"now": timestamp(as_of), "expiredPoints": expired_points}
+
+
+@app.get("/outbox")
+@app.get("/api/outbox")
+@app.post("/outbox")
+@app.post("/api/outbox")
+def outbox():
+    with connect() as db:
+        rows = db.execute("SELECT * FROM notifications_outbox ORDER BY id").fetchall()
+    return [{**dict(row), "payload": json.loads(row["payload"])} for row in rows]
 
 
 @app.get("/api/health")

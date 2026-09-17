@@ -10,6 +10,14 @@ Members have a stored integer `points` balance. Purchases store cents and calcul
 
 The purchase and redemption updates are wrapped in SQLite transactions. Each operation also inserts an immutable transaction row, giving the UI an activity history and giving debugging a way to reconcile the balance. Rejected redemptions return before any write, so insufficient points cannot create a negative balance.
 
+## Twist implementation
+
+Platinum is evaluated before the existing point-based tiers using lifetime spend in cents. The original seeded members remain unchanged because none reaches 500,000 cents. The purchase multiplier is calculated with integer arithmetic, including Platinum's exact 0.3 points per currency unit rate.
+
+Points are represented by `point_lots`, so a clock run can expire only the unused portion of grants older than 90 days. Redemptions consume lots oldest-first, while `POST /clock` writes expiration ledger entries and is idempotent when called repeatedly for the same time.
+
+Tier transitions are emitted by a small Notification Service boundary that writes JSON events to `notifications_outbox`. Both `/outbox` and `/api/outbox` expose the pending event stream for integration tests and future delivery workers.
+
 ## Delivery sequence
 
 1. Scaffolded a React/Vite frontend and added FastAPI, SQLite, bcrypt, JWT, CORS, and concurrent development dependencies.
