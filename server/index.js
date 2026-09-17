@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const db = new Database(path.join(__dirname, 'cafe-pont.db'))
 const app = express()
-const PORT = 3001
+const PORT = process.env.PORT || 3001
 const JWT_SECRET = process.env.JWT_SECRET || 'cafe-pont-local-secret'
 
 app.use(cors())
@@ -103,4 +103,9 @@ app.post('/api/members/:id/redeem', auth, (req, res) => {
   res.status(201).json({ member: publicMember(getMember(member.id)), pointsUsed: points })
 })
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }))
+app.use(express.static(path.join(__dirname, '../dist')))
+app.use((req, res, next) => {
+  if (req.method === 'GET' && !req.path.startsWith('/api/')) return res.sendFile(path.join(__dirname, '../dist/index.html'))
+  next()
+})
 app.listen(PORT, () => console.log(`Café Pont API listening on http://localhost:${PORT}`))
